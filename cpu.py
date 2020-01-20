@@ -25,20 +25,23 @@ class CPU:
         self.reg = [0] * 8
         self.pc = 0
         self.ram = [0] * 256
-        self.sp = 244
+        self.sp = 255
+        self.running = False
 
 
-    def ram_read(self, MAR):
-        return self.ram[MAR]
+    def ram_read(self, add_reg):
+        return self.ram[add_reg]
 
 
-    def ram_write(self, MAR, MDR):
-        self.ram[MAR] = MDR
+    def ram_write(self, add_reg, value):
+        self.ram[add_reg] = value
 
 
     def load(self):
         """Load a program into memory."""
         program = []
+
+        address = 0
 
         with open(sys.argv[1]) as f:
             for line in f:
@@ -49,7 +52,7 @@ class CPU:
                 except ValueError:
                     pass
 
-        address = 0
+
 
         # For now, we've just hardcoded a program:
 
@@ -71,11 +74,11 @@ class CPU:
     def alu(self, op, reg_a, reg_b):
         """ALU operations."""
 
-        if op == "ADD":
+        if op == ADD:
             self.reg[reg_a] += self.reg[reg_b]
-        elif op == "MUL":
+        elif op == MUL:
             self.reg[reg_a] *= self.reg[reg_b]
-        elif op == 'CMP':
+        elif op == CMP:
             self.E = 0b00000000
             self.G = 0b00000000
             self.L = 0b00000000
@@ -100,6 +103,7 @@ class CPU:
         else:
             raise Exception("Unsupported ALU operation")
 
+
     def trace(self):
         """
         Handy function to print out the CPU state. You might want to call this
@@ -121,19 +125,33 @@ class CPU:
         print()
 
 
-    def cmp(self, operand_a, operand_b):
-        self.alu('CMP', operand_a, operand_b)
+    def jmp(self, operand):
+        self.pc = self.reg[operand]
 
 
-    def push(self, operand_a):
-        self.SP = (self.SP - 1) % 255
-        self.ram[self.SP] = self.reg[operand_a]
+    def jeq(self, operand):
+        if self.E == 0b00000001:
+            self.pc = self.reg[operand]
+        else:
+            self.pc += 2
+
+
+    def jne(self, operand):
+        if self.E == 0b00000000:
+            self.pc = self.reg[operand]
+        else:
+            self.pc += 2
+
+
+    def push(self, operand):
+        self.sp = (self.sp - 1) % 255
+        self.ram[self.sp] = self.reg[operand]
 
 
     def pop(self, operand):
-        self.reg[operand] = self.ram[self.SP]
-        self.SP = (self.SP + 1) % 255
-        return self.SP
+        self.reg[operand] = self.ram[self.sp]
+        self.sp = (self.sp + 1) % 255
+        return self.sp
 
 
     def run(self):
@@ -141,4 +159,36 @@ class CPU:
         running = True
 
         while running:
-            IR = self.ram[self.pc]
+            operand_a = self.ram_read(self.pc + 1)
+            operand_b = self.ram_read(self.pc + 2)
+
+            if self.ram[self.pc] == LDI:
+                self.reg[operand_a] = operand_b
+                self.pc += 3
+
+            elif self.ram[self.pc] in [CMP, ADD, MUL]:
+                self.alu(self.ram[self.pc], operand_a, operand_b)
+                self.pc += 3
+
+            elif self.ram[self.pc] == JMP:
+                self.jmp(operand_a)
+
+            elif self.ram[self.pc] == JEQ:
+                self.jeq(operand_a)
+
+            elif self.ram[self.pc] == JNE:
+                self.jne(operand_a)
+
+            elif self.ram[self.pc] == PUSH:
+                self.push(operand_a)
+
+            elif self.ram[self.pc] == POP:
+                self.pop(operand_a)
+
+            elif self.ram[self.pc] == PRN:
+                print(self.reg[operand_a])
+                self.pc += 2
+
+            elif self.ram[self.pc] == HLT:
+                running = False
+                sys.exit(1)
